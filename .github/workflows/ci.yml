@@ -21,25 +21,16 @@ jobs:
           version: 2.1.0
           toolchain: gnat_native^15 gprbuild^25
 
-      - name: Diagnose gprbuild toolchain detection
+      - name: Build library and tests (alr env on PATH)
         run: |
-          alr exec -- which gnat gprbuild
-          echo "--- config projects found:"
-          find / -name "gnat_stub.cgpr" -o -name "*.cgpr" 2>/dev/null | head -5
-          echo "--- GPR_PROJECT_PATH: $GPR_PROJECT_PATH"
-          echo "--- gnat config knowledge base:"
-          ls /home/runner/.local/share/alire/toolchains/gnat_native*/lib/gpr 2>/dev/null | head -5 || true
-          gprconfig --version 2>/dev/null || true
-
-      - name: Build library
-        run: alr build
-
-      - name: Build and run tests
-        run: |
-          TOOLCHAIN_BIN=$(dirname "$(alr exec -- which gprbuild)")
-          echo "Toolchain bin: $TOOLCHAIN_BIN"
-          ls "$TOOLCHAIN_BIN" | head -20
-          export GPR_PROJECT_PATH="$(dirname "$TOOLCHAIN_BIN")/lib/gpr:$GPR_PROJECT_PATH"
+          # Put the full toolchain (gnat, gprbuild, gcc) on PATH for the
+          # step, so gprbuild's knowledge base resolves the compiler.
+          TOOLCHAIN_BIN=$(dirname "$(find /home/runner/.local/share/alire/toolchains -name gnat -type f | head -1)")
+          echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN"
+          export PATH="$TOOLCHAIN_BIN:$(dirname "$(find /home/runner/.local/share/alire/toolchains -name gprbuild -type f | head -1)"):$PATH"
+          gnat --version
+          gprbuild --version
+          gprbuild -P rtps.gpr
           gprbuild -P test/test_rtps.gpr
           test/test_rtps | tee test_output.txt
           grep -q "FAIL" test_output.txt && exit 1 || exit 0
