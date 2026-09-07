@@ -1,0 +1,18 @@
+------------------------------------------------------------------------------
+--  rtps.gpr -- library project for the RTPS 2.2 protocol implementation
+------------------------------------------------------------------------------
+
+library project Rtps is
+
+   for Languages use ("Ada");
+   for Library_Name use "RTPS";
+   for Source_Dirs use ("src");
+   for Object_Dir use "obj";
+   for Library_Dir use "lib";
+   for Library_Kind use "Static";
+
+   package Compiler is
+      for Switches ("ada") use ("-gnat2022", "-gnatwa", "-gnatVa");
+   end Compiler;
+
+end Rtps;

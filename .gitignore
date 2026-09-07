@@ -1,0 +1,32 @@
+# GNAT / GPRbuild compiler & linker output
+obj/
+lib/
+test/obj/
+test/objd/
+
+# GNAT object, ALI, and executable artifacts (in case they land elsewhere)
+*.o
+*.ali
+*.exe
+*.a
+*.so
+*.dll
+*.lexch
+
+# GNAT binder & gnatmake temporaries
+b__*
+*.bexch
+*.dg
+*.ci
+*.cin
+*.cgpr
+
+# GPS / GNAT Studio project state
+.gps/
+*.cgpr
+*.nfp
+
+# Editor / OS noise
+*.swp
+*~
+Thumbs.db
