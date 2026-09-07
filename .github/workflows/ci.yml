@@ -24,7 +24,7 @@ jobs:
       - name: Build library and tests
         run: |
           GNAT_BIN=$(dirname "$(find /home/runner/.local/share/alire/toolchains -name gnat -type f | head -1)")
-          GPRBUILD_BIN=$(dirname "$(find /home/runner/.local/share/alire/toolchains -name gprbuild -type f | head -1)")
+          GPRBUILD_BIN=$(dirname "$(find /home/runner/.local/share/alire/toolchains -path '*bin/gprbuild' -type f | head -1)")
           export PATH="$GNAT_BIN:$GPRBUILD_BIN:$PATH"
           gnat --version
           gprbuild --version
