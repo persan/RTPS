@@ -702,12 +702,17 @@ package body RTPS.Messages is
       RTPS.CDR.Get_UShort (S, Octets_To_Next, Flags_E_Endianness (Flags));
       E := Flags_E_Endianness (Flags);
 
-      if Octets_To_Next = 0 then
-         --  Last submessage in message (except PAD/INFO_TS, for which 0
-         --  means the next header follows immediately); extends to end
-         --  of the message (Limit), not of the whole buffer.
+      if Octets_To_Next = 0 and then Kind /= KIND_PAD and then Kind /= KIND_INFO_TS
+      then
+         --  Last submessage in message; extends to the end of the
+         --  message (Limit), not of the whole buffer (9.4.5.1.3).
          Body_First := S.Last + 1;
          Body_End   := S.Limit;
+      elsif Octets_To_Next = 0 then
+         --  PAD/INFO_TS with 0: the next header follows immediately
+         --  (9.4.5.1.3), i.e. no contents at all.
+         Body_First := S.Last + 1;
+         Body_End   := S.Last;
       else
          Body_First := S.Last + 1;
          Body_End   := Body_First + Natural (Octets_To_Next) - 1;
