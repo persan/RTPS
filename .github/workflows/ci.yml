@@ -24,11 +24,10 @@ jobs:
       - name: Build library
         run: alr build
 
-      - name: Build tests
-        run: alr exec -- gprbuild -P test/test_rtps.gpr
-
-      - name: Run tests
-        run: test/test_rtps | tee test_output.txt
+      - name: Build and run tests
+        run: |
+          alr exec -- gprbuild -P test/test_rtps.gpr
+          test/test_rtps | tee test_output.txt
 
       - name: Publish test summary
         if: always()
