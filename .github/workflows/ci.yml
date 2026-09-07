@@ -21,18 +21,14 @@ jobs:
           version: 2.1.0
           toolchain: gnat_native^15 gprbuild^25
 
-      - name: Show toolchain paths
-        run: |
-          alr exec -- which gnat gprbuild gcc
-          echo "GPR_PROJECT_PATH=$GPR_PROJECT_PATH"
-
       - name: Build library
         run: alr build
 
       - name: Build and run tests
         run: |
-          TOOLCHAIN_BIN=$(dirname "$(alr exec -- which gnat)")
-          export PATH="$TOOLCHAIN_BIN:$PATH"
+          # gnat_native is not on PATH by default; add its bin dir so the
+          # test driver's gprbuild can resolve the Ada compiler.
+          export PATH="$(dirname "$(alr exec -- which gprbuild)"):$PATH"
           gprbuild -P test/test_rtps.gpr
           test/test_rtps | tee test_output.txt
           grep -q "FAIL" test_output.txt && exit 1 || exit 0
