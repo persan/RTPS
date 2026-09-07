@@ -22,16 +22,19 @@ jobs:
           toolchain: gnat_native^15 gprbuild^25
 
       - name: Build library
-        run: alr build --skip-submodules
+        run: alr build
 
       - name: Build and run tests
         run: |
           alr exec -- gprbuild -Ptest/test_rtps.gpr
-          test/test_rtps
+          test/test_rtps | tee test_output.txt
 
-      - name: Test summary
+      - name: Publish test summary
         if: always()
         run: |
-          echo "RTPS test run on ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          test/test_rtps > test_output.txt 2>&1 || true
-          grep -E "^(PASS|FAIL|==)" test_output.txt >> $GITHUB_STEP_SUMMARY || true
+          {
+            echo "## RTPS test results (${{ github.sha }})"
+            echo '```'
+            grep -E "^(PASS|FAIL|==)" test_output.txt || true
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
