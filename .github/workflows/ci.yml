@@ -21,13 +21,19 @@ jobs:
           version: 2.1.0
           toolchain: gnat_native^15 gprbuild^25
 
-      - name: Build library and tests
+      - name: Show toolchain paths
         run: |
-          alr build
-          alr exec -- gprbuild -P test/test_rtps.gpr
+          alr exec -- which gnat gprbuild gcc
+          echo "GPR_PROJECT_PATH=$GPR_PROJECT_PATH"
 
-      - name: Run tests
+      - name: Build library
+        run: alr build
+
+      - name: Build and run tests
         run: |
+          TOOLCHAIN_BIN=$(dirname "$(alr exec -- which gnat)")
+          export PATH="$TOOLCHAIN_BIN:$PATH"
+          gprbuild -P test/test_rtps.gpr
           test/test_rtps | tee test_output.txt
           grep -q "FAIL" test_output.txt && exit 1 || exit 0
 
