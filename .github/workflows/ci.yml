@@ -21,13 +21,11 @@ jobs:
           version: 2.1.0
           toolchain: gnat_native^15 gprbuild^25
 
-      - name: Build library and tests (alr env on PATH)
+      - name: Build library and tests
         run: |
-          # Put the full toolchain (gnat, gprbuild, gcc) on PATH for the
-          # step, so gprbuild's knowledge base resolves the compiler.
-          TOOLCHAIN_BIN=$(dirname "$(find /home/runner/.local/share/alire/toolchains -name gnat -type f | head -1)")
-          echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN"
-          export PATH="$TOOLCHAIN_BIN:$(dirname "$(find /home/runner/.local/share/alire/toolchains -name gprbuild -type f | head -1)"):$PATH"
+          GNAT_BIN=$(dirname "$(find /home/runner/.local/share/alire/toolchains -name gnat -type f | head -1)")
+          GPRBUILD_BIN=$(dirname "$(find /home/runner/.local/share/alire/toolchains -name gprbuild -type f | head -1)")
+          export PATH="$GNAT_BIN:$GPRBUILD_BIN:$PATH"
           gnat --version
           gprbuild --version
           gprbuild -P rtps.gpr
