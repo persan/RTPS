@@ -4,6 +4,10 @@ lib/
 test/obj/
 test/objd/
 
+# Alire workspace state (alire.toml itself IS tracked)
+alire/
+config/
+
 # GNAT object, ALI, and executable artifacts (in case they land elsewhere)
 *.o
 *.ali
@@ -23,7 +27,6 @@ b__*
 
 # GPS / GNAT Studio project state
 .gps/
-*.cgpr
 *.nfp
 
 # Editor / OS noise

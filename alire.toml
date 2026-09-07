@@ -1,5 +1,5 @@
 name = "rtps"
-description = "RTPS 2.2 - DDS Interoperability Wire Protocol (OMG DDSI-RTPS) wire-encoding library in Ada"
+description = "RTPS 2.2 DDS Interoperability Wire Protocol (OMG DDSI-RTPS) in Ada"
 long-description = """
 An interface to, and partial implementation of, the Real-time Publish-Subscribe
 Protocol (RTPS) 2.2 - the DDS Interoperability Wire Protocol defined by the
@@ -24,14 +24,6 @@ maintainers = ["Per Sandberg <per.s.sandberg@bahnhof.se>"]
 maintainers-logins = ["persan"]
 
 project-files = ["rtps.gpr"]
-
-[origin]
-commit  = "99584a77d21a15c357ae59f384e540e2d513cd74"
-url     = "https://github.com/persan/RTPS"
-subdir  = "."
-
-[general]
-executables = ["test_rtps"]
 
 [[depends-on]]
 gnat = ">=2021"
