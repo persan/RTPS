@@ -15,20 +15,22 @@ cross-referenced to its clause number in the source comments.
 Work in progress. Implemented and AUnit-tested: the **Messages Module**
 (clause 8.3 / 9.4.5 wire mapping), the **UDPv4 transport** (clause 9 PSM, on
 GNAT.Sockets), the **Reliable StatefulWriter / StatefulReader protocol
-machines** (8.4.9.2 / 8.4.12.2) with their proxy window state, and the
+machines** (8.4.9.2 / 8.4.12.2) with their proxy window state, the
 **Discovery Module** (8.5): SPDP participant discovery with well-known
 multicast announcements and lease expiry, plus SEDP endpoint discovery over
-the reliable built-in endpoints. SPDP is exercised in a real discovery
-exchange over loopback multicast; the protocol machines in a real reliable
-exchange (DATA push → HEARTBEAT → ACKNACK → repair). Not yet conformant: no
-liveliness protocol and no CDR payload encapsulation for user data.
+the reliable built-in endpoints, and the **Writer Liveliness Protocol**
+(8.4.13): liveliness assertions through the reliable
+BuiltinParticipantMessageWriter/Reader. SPDP is exercised in a real
+discovery exchange over loopback multicast; the protocol machines in a real
+reliable exchange (DATA push → HEARTBEAT → ACKNACK → repair). Not yet
+conformant: no CDR payload encapsulation for user data.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
 | `src/` | The library (static library project `rtps.gpr`, produces `libRTPS.a`) |
-| `test/` | AUnit test driver (`test_rtps.gpr`) — 17 routines across 8 suites (header, message round-trips, receiver, history, GUID, UDPv4 loopback, protocol machines, discovery) |
+| `test/` | AUnit test driver (`test_rtps.gpr`) — 21 routines across 9 suites (header, message round-trips, receiver, history, GUID, UDPv4 loopback, protocol machines, discovery, liveliness) |
 | `doc/` | The RTPS 2.2 specification PDF and extracted text |
 
 ### Library sources (`src/`)
@@ -49,6 +51,7 @@ liveliness protocol and no CDR payload encapsulation for user data.
 | `RTPS.Discovery.Data` | 8.5.3.2, 8.5.4.4, 9.6.2.2 | SPDPdiscoveredParticipantData / DiscoveredWriterData / DiscoveredReaderData with their ParameterList wire mapping (Table 9.12 ParameterIds) |
 | `RTPS.Discovery.SPDP` | 8.5.3 | Simple Participant Discovery Protocol: periodic announcements to the well-known multicast locator 239.255.0.1 (9.6.1.4.1), participant table keyed by GUID with leaseDuration expiry (8.5.3.3.2) |
 | `RTPS.Discovery.SEDP` | 8.5.4 | Simple Endpoint Discovery Protocol: reliable built-in endpoints on the protocol machines, participant matching (8.5.5.1/8.5.5.2), local endpoint registration, same-topic reliable matching rule |
+| `RTPS.Liveliness` | 8.4.13, 9.6.2.1 | Writer Liveliness Protocol: reliable BuiltinParticipantMessageWriter/Reader, ParticipantMessageData wire mapping with the reserved AUTOMATIC/MANUAL liveliness kinds, instance-based lease bookkeeping (`Set_Lease`/`Lease_Expired`/`Last_Assertion`), SPDP manualLivelinessCount bump |
 
 ## Building
 
@@ -253,6 +256,49 @@ begin
 end Spdp_Discovery;
 ```
 
+Asserting writer liveliness through the built-in participant message
+endpoints:
+
+```ada
+with RTPS.History;
+with RTPS.Liveliness;
+with RTPS.Types;
+with RTPS.Transports.UDPv4;
+
+procedure Assert_Liveliness is
+   package L renames RTPS.Liveliness;
+   package U renames RTPS.Transports.UDPv4;
+
+   W  : L.Writer;
+   Tx : aliased U.UDPv4_Transport;
+begin
+   L.New_Writer
+     (W,
+      Participant => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      Cache       => new RTPS.History.History_Cache (Capacity => 16));
+
+   Tx.Open (Port => 0);
+   L.Open (W, Tx'Access);
+
+   --  Discovery matched the remote BuiltinParticipantMessageReader:
+   L.Matched_Reader_Add
+     (W,
+      (Guid_Prefix => [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+       Entity_Id   => RTPS.Types.ENTITYID_P2P_BUILTIN_PARTICIPANT_MESSAGE_READER),
+      Meta_Port => 7412);
+
+   --  Periodically, faster than the smallest lease duration of the
+   --  AUTOMATIC writers (8.4.13.5):
+   L.Assert (W, L.Liveliness_Automatic);
+
+   --  On explicit DDS-Liveliness assert() calls of the application:
+   L.Assert (W, L.Liveliness_Manual_By_Participant);
+   --  ... and Bump_Manual_Count on the SPDP state so the next
+   --  SPDPdiscoveredParticipantData carries the incremented
+   --  manualLivelinessCount (Table 8.73).
+end Assert_Liveliness;
+```
+
 ## Design notes
 
 - **Spec traceability** — types and constants carry the clause/table they
@@ -279,10 +325,15 @@ end Spdp_Discovery;
 - **Discovery rides standard DATA** — SPDP/SEDP payloads are plain
   ParameterLists inside DATA submessages (9.6.2.2), so the discovery
   protocols reuse the same encoder/decoder machinery as user traffic.
+- **Liveliness reuses the reliable machines** — the
+  BuiltinParticipantMessageWriter/Reader (8.4.13) are thin wrappers
+  around the StatefulWriter/StatefulReader, so liveliness assertions
+  get HEARTBEAT/ACKNACK reliability for free; the two instance kinds
+  (automatic vs manual-by-participant) share one HistoryCache with
+  KEEP_LAST(1) semantics per instance.
 
 ## Roadmap
 
-- Writer liveliness protocol (8.4.13)
 - CDR payload encapsulation for user data (clause 10)
 - GAP coalescing for runs of irrelevant sequence numbers (8.4.9.2.12 note)
 
