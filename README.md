@@ -18,19 +18,21 @@ GNAT.Sockets), the **Reliable StatefulWriter / StatefulReader protocol
 machines** (8.4.9.2 / 8.4.12.2) with their proxy window state, the
 **Discovery Module** (8.5): SPDP participant discovery with well-known
 multicast announcements and lease expiry, plus SEDP endpoint discovery over
-the reliable built-in endpoints, and the **Writer Liveliness Protocol**
+the reliable built-in endpoints, the **Writer Liveliness Protocol**
 (8.4.13): liveliness assertions through the reliable
-BuiltinParticipantMessageWriter/Reader. SPDP is exercised in a real
-discovery exchange over loopback multicast; the protocol machines in a real
-reliable exchange (DATA push → HEARTBEAT → ACKNACK → repair). Not yet
-conformant: no CDR payload encapsulation for user data.
+BuiltinParticipantMessageWriter/Reader, and the **Data Encapsulation** of
+clause 10: CDR and ParameterList schemes for user-data payloads. SPDP is
+exercised in a real discovery exchange over loopback multicast; the
+protocol machines in a real reliable exchange (DATA push → HEARTBEAT →
+ACKNACK → repair); the encapsulation against the byte-exact 10.2.2.1 spec
+example in both endiannesses.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
 | `src/` | The library (static library project `rtps.gpr`, produces `libRTPS.a`) |
-| `test/` | AUnit test driver (`test_rtps.gpr`) — 21 routines across 9 suites (header, message round-trips, receiver, history, GUID, UDPv4 loopback, protocol machines, discovery, liveliness) |
+| `test/` | AUnit test driver (`test_rtps.gpr`) — 24 routines across 10 suites (header, message round-trips, receiver, history, GUID, UDPv4 loopback, protocol machines, discovery, liveliness, payload encapsulation) |
 | `doc/` | The RTPS 2.2 specification PDF and extracted text |
 
 ### Library sources (`src/`)
@@ -52,6 +54,7 @@ conformant: no CDR payload encapsulation for user data.
 | `RTPS.Discovery.SPDP` | 8.5.3 | Simple Participant Discovery Protocol: periodic announcements to the well-known multicast locator 239.255.0.1 (9.6.1.4.1), participant table keyed by GUID with leaseDuration expiry (8.5.3.3.2) |
 | `RTPS.Discovery.SEDP` | 8.5.4 | Simple Endpoint Discovery Protocol: reliable built-in endpoints on the protocol machines, participant matching (8.5.5.1/8.5.5.2), local endpoint registration, same-topic reliable matching rule |
 | `RTPS.Liveliness` | 8.4.13, 9.6.2.1 | Writer Liveliness Protocol: reliable BuiltinParticipantMessageWriter/Reader, ParticipantMessageData wire mapping with the reserved AUTOMATIC/MANUAL liveliness kinds, instance-based lease bookkeeping (`Set_Lease`/`Lease_Expired`/`Last_Assertion`), SPDP manualLivelinessCount bump |
+| `RTPS.Payload` | 10 | Data encapsulation for user data: the Table 10.1 scheme identifiers (CDR_BE/CDR_LE/PL_CDR_BE/PL_CDR_LE), the 10.2.1.1 header (identifier + reserved options field), CDR wrap/unwrap for type-plugin-serialized data and ParameterList wrap/unwrap |
 
 ## Building
 
@@ -299,6 +302,48 @@ begin
 end Assert_Liveliness;
 ```
 
+Encapsulating a serialized application type into a DATA payload:
+
+```ada
+with RTPS.CDR;
+with RTPS.Payload;
+with RTPS.Types;
+
+procedure Encapsulate is
+   package C renames RTPS.CDR;
+   package P renames RTPS.Payload;
+   package T renames RTPS.Types;
+
+   Buf  : T.Octet_Buffer := new T.Octet_Array (1 .. 64);
+   S    : C.Stream;
+   Wire : T.Octet_Buffer;
+   Start : Natural;      --  first octet of the CDR body
+   Little : Boolean;
+   Options : T.Unsigned_Short;
+   Ok    : Boolean;
+begin
+   --  Type-plugin side: serialize the application type (10.2.2.1:
+   --  struct { long a; char b[4]; } with a=1, b="abcd").
+   C.Bind (S, C.Octet_Array_Access (Buf), Buf.all'Length);
+   C.Put_Long (S, 1, C.Little_Endian);
+   C.Put_Octet (S, Character'Pos ('a'));
+   C.Put_Octet (S, Character'Pos ('b'));
+   C.Put_Octet (S, Character'Pos ('c'));
+   C.Put_Octet (S, Character'Pos ('d'));
+
+   --  Clause 10: wrap the serialized data into the CDR_LE scheme
+   --  (identifier 0x00 0x01 + options + data).
+   Wire := P.Encode_CDR (Buf (1 .. C.Encoded_Length (S)),
+                         Little => True);
+   --  Wire (1 .. Wire'Length) goes into the DATA submessage payload.
+
+   --  Receiving side: strip the header, learn the byte order.
+   P.Decode_CDR (Wire.all, Start, Little, Options, Ok);
+   --  Decode Wire (Start .. Wire.all'Length) with RTPS.CDR in the
+   --  Little/Big_Endian given by Little.
+end Encapsulate;
+```
+
 ## Design notes
 
 - **Spec traceability** — types and constants carry the clause/table they
@@ -331,10 +376,13 @@ end Assert_Liveliness;
   get HEARTBEAT/ACKNACK reliability for free; the two instance kinds
   (automatic vs manual-by-participant) share one HistoryCache with
   KEEP_LAST(1) semantics per instance.
+- **Payloads are encapsulated, not interpreted** — user data carries
+  the clause-10 encapsulation header (scheme identifier + options);
+  `RTPS.Payload` adds/strips it, so the type-plugin serializes with
+  RTPS.CDR and stays in charge of the actual representation.
 
 ## Roadmap
 
-- CDR payload encapsulation for user data (clause 10)
 - GAP coalescing for runs of irrelevant sequence numbers (8.4.9.2.12 note)
 
 ## References
