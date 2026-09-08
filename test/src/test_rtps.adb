@@ -20,6 +20,7 @@ with RTPS.Tests.Guid;
 with RTPS.Tests.UDPv4;
 with RTPS.Tests.Proto;
 with RTPS.Tests.Discovery;
+with RTPS.Tests.Liveliness;
 
 procedure Test_RTPS is
 
@@ -40,6 +41,7 @@ procedure Test_RTPS is
       Add_Test (Result, new RTPS.Tests.UDPv4.UDPv4_Test);
       Add_Test (Result, new RTPS.Tests.Proto.Proto_Test);
       Add_Test (Result, new RTPS.Tests.Discovery.Discovery_Test);
+      Add_Test (Result, new RTPS.Tests.Liveliness.Liveliness_Test);
       return Result;
    end Suite;
 

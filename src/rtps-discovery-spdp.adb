@@ -77,7 +77,7 @@ package body RTPS.Discovery.SPDP is
            T.User_Unicast_Port (Self.Domain_Id, Self.Participant_Id),
          Default_Multicast_Port =>
            T.User_Multicast_Port (Self.Domain_Id),
-         Manual_Liveliness_Count => 0,
+         Manual_Liveliness_Count => Self.Manual_Count,
          Lease_Duration =>
            (Seconds => T.Long (Self.Lease_Duration), Fraction => 0));
 
@@ -219,7 +219,9 @@ package body RTPS.Discovery.SPDP is
          Remote_Count   => 0,
          Last_Announce  => 0.0,
          Have_Announced => False,
-         Clock_Now      => 0.0);
+         Clock_Now      => 0.0,
+         Manual_Count   => 0,
+         Manual_Bumped  => False);
    end New_Participant;
 
    procedure Open
@@ -235,6 +237,11 @@ package body RTPS.Discovery.SPDP is
      (Self : Participant_State; Now : Duration) return Boolean
    is
    begin
+      --  A manualLivelinessCount bump goes out immediately (Table
+      --  8.73: liveliness asserted -> new SPDPdiscoveredParticipantData).
+      if Self.Manual_Bumped then
+         return True;
+      end if;
       if not Self.Have_Announced then
          return True;
       end if;
@@ -276,6 +283,7 @@ package body RTPS.Discovery.SPDP is
 
       Self.Have_Announced := True;
       Self.Last_Announce := Self.Clock_Now;
+      Self.Manual_Bumped := False;
    end Announce;
 
    ---------------------------------------------------------------------
@@ -356,6 +364,16 @@ package body RTPS.Discovery.SPDP is
 
    function Remote_Count (Self : Participant_State) return Natural is
      (Self.Remote_Count);
+
+   procedure Bump_Manual_Count (Self : in out Participant_State) is
+      use all type T.Count_T;
+   begin
+      Self.Manual_Count := Self.Manual_Count + 1;
+      Self.Manual_Bumped := True;
+   end Bump_Manual_Count;
+
+   function Manual_Count (Self : Participant_State) return T.Count_T is
+     (Self.Manual_Count);
 
    procedure Remotes
      (Self  : Participant_State;

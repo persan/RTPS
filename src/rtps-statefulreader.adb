@@ -185,7 +185,8 @@ package body RTPS.StatefulReader is
       Handled   :    out Boolean)
    is
       Slot  : constant Natural := Find_Writer (Self, Writer_Id);
-      Proxy : P.WriterProxy renames Self.Writers (Slot).Proxy;
+      Proxy : P.WriterProxy renames
+        Self.Writers (Natural'Max (Slot, 1)).Proxy;
    begin
       if Slot = 0 then
          Handled := False;

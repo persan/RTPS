@@ -103,6 +103,20 @@ package RTPS.Discovery.SPDP is
      (Self : Participant_State; Guid : T.GUID_T) return T.Unsigned_Long;
 
    ---------------------------------------------------------------------
+   --  MANUAL_BY_PARTICIPANT liveliness support (8.4.13.5 / Table 8.73)
+   ---------------------------------------------------------------------
+
+   procedure Bump_Manual_Count (Self : in out Participant_State);
+   --  Increment manualLivelinessCount: called when liveliness is
+   --  asserted manually.  The next announcement carries the new count
+   --  (Table 8.73: "When liveliness is asserted, the
+   --  manualLivelinessCount is incremented and a new
+   --  SPDPdiscoveredParticipantData is sent") and forces
+   --  Needs_Announce to return True.
+
+   function Manual_Count (Self : Participant_State) return T.Count_T;
+
+   ---------------------------------------------------------------------
    --  Serialization used by the SPDP announcement (also exercised by
    --  the test suite directly)
    ---------------------------------------------------------------------
@@ -147,6 +161,11 @@ private
       Last_Announce  : Duration := 0.0;
       Have_Announced : Boolean := False;
       Clock_Now      : Duration := 0.0;
+      Manual_Count   : T.Count_T := 0;
+      Manual_Bumped  : Boolean := False;
+      --  Set by Bump_Manual_Count: the next Needs_Announce returns
+      --  True so the incremented manualLivelinessCount goes out
+      --  promptly (8.4.13.5 / Table 8.73).
       --  Applications drive time by passing Now to Needs_Announce /
       --  Expire_Stale; Clock_Now tracks the latest value seen.
    end record;
