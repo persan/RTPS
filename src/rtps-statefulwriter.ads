@@ -121,10 +121,26 @@ package RTPS.StatefulWriter is
    --  Number of matched readers currently registered.
    function Reader_Count (Self : Writer_State) return Natural;
 
+   type Reader_Iterator is private;
+
+   --  Enumerate matched reader GUIDs: call First, then Next until
+   --  Done.  Invalid (GUID_UNKNOWN) when Done.
+   procedure First_Reader
+     (Self : Writer_State; It : out Reader_Iterator;
+      Guid : out Types.GUID_T);
+   procedure Next_Reader
+     (Self : Writer_State; It : in out Reader_Iterator;
+      Guid : out Types.GUID_T);
+
+   function Reader_Guid_Of_It (It : Reader_Iterator) return Types.GUID_T;
+
    --  Access the transport for sending (null if not open).
    function Transport (Self : Writer_State) return Transports.Transport_Ref;
 
 private
+
+   type Reader_Iterator is new Natural range 1 .. Max_Matched_Readers;
+   --  Index into the Readers table; 0 = before first.
 
    type Reader_Slot is record
       Used  : Boolean := False;

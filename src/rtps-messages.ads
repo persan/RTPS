@@ -243,4 +243,21 @@ package RTPS.Messages is
 
    Unknown_Kind : exception;
 
+   ---------------------------------------------------------------------
+   --  ParameterList wire encoding (9.4.2.11) -- exposed for the
+   --  Discovery Module (9.6.2.2: discovery data rides in DATA payloads
+   --  as a parameter list).
+   ---------------------------------------------------------------------
+
+   procedure Put_Parameter_List
+     (S : in out CDR.Stream'Class; List : Parameter_Array;
+      E : CDR.Endianness);
+   --  Encode the parameters followed by the PID_SENTINEL terminator.
+
+   procedure Decode_Parameter_List
+     (S : in out CDR.Stream'Class; List : out Parameter_Array_Ref;
+      E : CDR.Endianness);
+   --  Parse a parameter list up to (and including) PID_SENTINEL; the
+   --  returned list excludes the sentinel.
+
 end RTPS.Messages;

@@ -458,4 +458,48 @@ package body RTPS.StatefulWriter is
       return Self.Transport;
    end Transport;
 
+
+   ---------------------------------------------------------------------
+   --  Reader enumeration (used by the discovery layer)
+   ---------------------------------------------------------------------
+
+   procedure First_Reader
+     (Self : Writer_State; It : out Reader_Iterator;
+      Guid : out Types.GUID_T)
+   is
+   begin
+      It := Reader_Iterator'First;
+      loop
+         exit when It = Reader_Iterator'Last;
+         if Self.Readers (Natural (It)).Used then
+            Guid := Self.Readers (Natural (It)).Proxy.Remote_Reader_Guid;
+            return;
+         end if;
+         It := It + 1;
+      end loop;
+      Guid := Types.GUID_UNKNOWN;
+   end First_Reader;
+
+   procedure Next_Reader
+     (Self : Writer_State; It : in out Reader_Iterator;
+      Guid : out Types.GUID_T)
+   is
+   begin
+      It := Reader_Iterator'Succ (It);
+      loop
+         exit when It = Reader_Iterator'Last;
+         if Self.Readers (Natural (It)).Used then
+            Guid := Self.Readers (Natural (It)).Proxy.Remote_Reader_Guid;
+            return;
+         end if;
+         It := It + 1;
+      end loop;
+      Guid := Types.GUID_UNKNOWN;
+   end Next_Reader;
+
+   function Reader_Guid_Of_It (It : Reader_Iterator) return Types.GUID_T
+   is (Types.GUID_UNKNOWN);
+   --  Iteration returns GUIDs directly; this accessor exists for
+   --  completeness.
+
 end RTPS.StatefulWriter;
