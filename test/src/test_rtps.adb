@@ -17,6 +17,7 @@ with RTPS.Tests.Roundtrip;
 with RTPS.Tests.Receiver;
 with RTPS.Tests.History;
 with RTPS.Tests.Guid;
+with RTPS.Tests.UDPv4;
 
 procedure Test_RTPS is
 
@@ -34,6 +35,7 @@ procedure Test_RTPS is
       Add_Test (Result, new RTPS.Tests.Receiver.Receiver_Test);
       Add_Test (Result, new RTPS.Tests.History.History_Test);
       Add_Test (Result, new RTPS.Tests.Guid.Guid_Test);
+      Add_Test (Result, new RTPS.Tests.UDPv4.UDPv4_Test);
       return Result;
    end Suite;
 
