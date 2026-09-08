@@ -16,7 +16,7 @@ transport are not yet implemented.
 All constants and wire layouts are taken from the normative text of the
 specification and cross-referenced to clause numbers in the source comments.
 """
-version = "0.1.0"
+version = "0.2.0"
 licenses = "GPL-3.0-or-later"
 website = "https://github.com/persan/RTPS"
 
