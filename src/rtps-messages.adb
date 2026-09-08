@@ -245,6 +245,18 @@ package body RTPS.Messages is
                   V (K) := P.Value.all (P.Value.all'First + K - 1);
                end loop;
                RTPS.CDR.Put_Octets (S, V);
+               --  Pad the value to a 4-octet boundary (9.4.2.11: each
+               --  parameter occupies an even multiple of 4 octets,
+               --  matching the decoder's aligned skip).
+               declare
+                  Pad : constant Natural :=
+                    (4 - Natural (P.Length) mod 4) mod 4;
+                  Zero : constant RTPS.Types.Octet := 0;
+               begin
+                  for K in 1 .. Pad loop
+                     RTPS.CDR.Put_Octet (S, Zero);
+                  end loop;
+               end;
             end;
          else
             declare
