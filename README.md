@@ -12,19 +12,21 @@ cross-referenced to its clause number in the source comments.
 
 ## Status
 
-Work in progress. The **Messages Module** (clause 8.3 / 9.4.5 wire mapping) is
-implemented and round-trip tested in both endiannesses; the **UDPv4 transport**
-(clause 9 PSM) is implemented on GNAT.Sockets with real-socket loopback tests;
-the Structure Module (clause 8.2) is interface + HistoryCache. Not yet a
-conformant RTPS implementation — no discovery protocol, no writer/reader
-protocol machines.
+Work in progress. Implemented and AUnit-tested: the **Messages Module**
+(clause 8.3 / 9.4.5 wire mapping), the **UDPv4 transport** (clause 9 PSM, on
+GNAT.Sockets), and the **Reliable StatefulWriter / StatefulReader protocol
+machines** (8.4.9.2 / 8.4.12.2) with their proxy window state — exercised in
+a real reliable exchange over loopback sockets (DATA push → HEARTBEAT →
+ACKNACK → repair). Not yet conformant: no discovery (SPDP/SEDP) and no
+liveliness protocol; matching is currently done by the application rather
+than discovered.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
 | `src/` | The library (static library project `rtps.gpr`, produces `libRTPS.a`) |
-| `test/` | AUnit test driver (`test_rtps.gpr`) |
+| `test/` | AUnit test driver (`test_rtps.gpr`) — 12 routines across 7 suites (header, message round-trips, receiver, history, GUID, UDPv4 loopback, protocol machines) |
 | `doc/` | The RTPS 2.2 specification PDF and extracted text |
 
 ### Library sources (`src/`)
@@ -39,6 +41,9 @@ protocol machines.
 | `RTPS.Receiver` | 8.3.4 | Message Receiver: parses messages, maintains interpreter state, dispatches submessages to a Sink callback |
 | `RTPS.Transports` | 9.6 | Transport abstraction (interface) |
 | `RTPS.Transports.UDPv4` | 9 (PSM) | UDPv4 transport on GNAT.Sockets: Open/Close with SO_REUSEADDR, Send (one datagram per message), Receive with optional timeout, multicast group join/leave |
+| `RTPS.Proto` | 8.4.7.5, 8.4.10.4 | ReaderProxy/WriterProxy sequence-number window state: acked/requested/unsent and missing/lost/received/irrelevant transitions (Tables 8.56/8.68) |
+| `RTPS.StatefulWriter` | 8.4.7.4, 8.4.9.2 | Reliable StatefulWriter machine: match management, DATA/GAP push (T4/T12), periodic HEARTBEAT with FinalFlag NOT_SET (T7), ACKNACK processing (T8/T10), repair resend (T12) |
+| `RTPS.StatefulReader` | 8.4.10.3, 8.4.12.2 | Reliable StatefulReader machine: HEARTBEAT handling (T7), DATA into reader cache (T8), GAP irrelevance marking (T9), ACKNACK construction (T5) |
 
 ## Building
 
@@ -117,6 +122,76 @@ begin
 end UDP_Loop;
 ```
 
+Reliable writer → reader exchange with the protocol machines:
+
+```ada
+with RTPS.Types;
+with RTPS.History;
+with RTPS.StatefulWriter;
+with RTPS.StatefulReader;
+with RTPS.Transports;
+with RTPS.Transports.UDPv4;
+
+procedure Reliable_Exchange is
+   package SW renames RTPS.StatefulWriter;
+   package SR renames RTPS.StatefulReader;
+   package U  renames RTPS.Transports.UDPv4;
+   use type RTPS.Types.Octet;
+
+   Writer_Cache : constant RTPS.History.History_Cache_Ref :=
+     new RTPS.History.History_Cache (Capacity => 32);
+   Reader_Cache : constant RTPS.History.History_Cache_Ref :=
+     new RTPS.History.History_Cache (Capacity => 32);
+
+   Writer_Guid : constant RTPS.Types.GUID_T :=
+     (Guid_Prefix => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      Entity_Id   => [0, 0, 1, 16#C2#]);   -- built-in writer id
+   Reader_Guid : constant RTPS.Types.GUID_T :=
+     (Guid_Prefix => [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+      Entity_Id   => [0, 0, 1, 16#C7#]);   -- built-in reader id
+
+   Writer : SW.Writer_State;
+   Reader : SR.Reader_State;
+   Tx     : aliased U.UDPv4_Transport;
+   Change : RTPS.History.Cache_Change_Ref;
+   Ack    : Boolean;
+   Handled: Boolean;
+begin
+   SW.New_Writer  (Writer, Writer_Guid, Writer_Cache);
+   SR.New_Reader  (Reader, Reader_Guid, Reader_Cache);
+   Tx.Open (Port => 0);
+   SW.Open (Writer, Tx'Access);
+
+   --  Discovery would do this:
+   SR.Matched_Writer_Add (Reader, Writer_Guid, Tx.Local_Port);
+   SW.Matched_Reader_Add
+     (Writer,
+      Proxy        => (Remote_Reader_Guid => Reader_Guid, others => <>),
+      Window_First => 1,
+      Window_Last  => 8);
+
+   --  DDS writes; the writer pushes DATA to the reader.
+   Writer_Cache.Add_Change
+     (Kind => RTPS.Types.ALIVE, Write_Time => RTPS.Types.TIME_ZERO,
+      Instance => 0, Data => null, Data_Length => 0, Change => Change);
+   SW.On_New_Change (Writer, Change.all.SN);
+   SW.Push_Next (Writer, Reader_Guid);
+
+   --  Reader side: HEARTBEAT triggers the ACKNACK machinery.
+   SW.Send_Heartbeat (Writer);
+   SR.On_Heartbeat (Reader, Writer_Guid.Entity_Id, 1, 1,
+                    Final => False, Liveliness => False, Ack => Ack);
+   --  Ack = True: the reader is missing SN 1 and must answer with an
+   --  ACKNACK (SR.Make_Acknack builds it, the writer's On_Acknack
+   --  processes it and Push_Next (For_Request => True) resends).
+
+   --  Reader side, on receiving the repair DATA:
+   SR.On_Data (Reader, Writer_Guid.Entity_Id,
+               SN => 1, Payload => null, Payload_Length => 0,
+               Handled => Handled);
+end Reliable_Exchange;
+```
+
 ## Design notes
 
 - **Spec traceability** — types and constants carry the clause/table they
@@ -133,12 +208,20 @@ end UDP_Loop;
 - **One datagram per message** — the UDPv4 transport maps one RTPS
   Message to exactly one UDP datagram (clause 9.5); locator→sockaddr
   conversion enforces the 9.3.2 rule (12 zero octets + a.b.c.d).
+- **Window-based proxy state** — each ReaderProxy/WriterProxy keeps a
+  `[First_SN .. Last_SN]` window with a parallel status array instead of
+  open-ended change lists; HEARTBEAT `lost_changes_update` slides the
+  window base forward, bounding memory per matched endpoint.
+- **Transport-agnostic protocol machines** — the writer sends through
+  the abstract `Transport` interface, so the same StatefulWriter/
+  StatefulReader work over UDPv4, loopback, or any future PSM.
 
 ## Roadmap
 
-- StatefulWriter / StatefulReader protocol machines (8.4.9 / 8.4.12)
-- SPDP/SEDP discovery endpoints (8.5)
+- SPDP/SEDP discovery endpoints (8.5) to automate matching
+- Writer liveliness protocol (8.4.13)
 - CDR payload encapsulation for user data (clause 10)
+- GAP coalescing for runs of irrelevant sequence numbers (8.4.9.2.12 note)
 
 ## References
 
