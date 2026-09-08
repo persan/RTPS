@@ -7,11 +7,13 @@ Object Management Group in DDSI-RTPS 2.2 (OMG document formal/2014-09-01).
 
 Implemented: the Messages Module (clause 8.3 / 9.4.5 wire mapping) - RTPS
 Header, all 13 submessages with wire encode/decode in both endiannesses,
-SequenceNumberSet/FragmentNumberSet bitmaps, ParameterList - plus the PIM/PSM
-types (GUID, SequenceNumber, Time, Locator, ParameterIds), a HistoryCache
-(8.2.2) and a Message Receiver (8.3.4). The Structure-module entity
-interfaces are in place; the Behavior and Discovery modules and the UDP/IP
-transport are not yet implemented.
+SequenceNumberSet/FragmentNumberSet bitmaps, ParameterList - the PIM/PSM
+types (GUID, SequenceNumber, Time, Locator, ParameterIds, default port
+formulas), a HistoryCache (8.2.2), a Message Receiver (8.3.4), the UDPv4
+transport (clause 9 PSM, GNAT.Sockets), the reliable StatefulWriter /
+StatefulReader protocol machines (8.4.9.2 / 8.4.12.2), the SPDP/SEDP
+discovery protocols (8.5), the Writer Liveliness Protocol (8.4.13), the
+clause-10 data encapsulation (CDR / PL_CDR) and GAP coalescing.
 
 All constants and wire layouts are taken from the normative text of the
 specification and cross-referenced to clause numbers in the source comments.
@@ -20,8 +22,10 @@ version = "0.2.0"
 licenses = "GPL-3.0-or-later"
 website = "https://github.com/persan/RTPS"
 
+authors = ["Per Sandberg"]
 maintainers = ["Per Sandberg <per.s.sandberg@bahnhof.se>"]
 maintainers-logins = ["persan"]
+tags = ["rtps", "dds", "networking", "protocol", "wire-protocol"]
 
 project-files = ["rtps.gpr"]
 
