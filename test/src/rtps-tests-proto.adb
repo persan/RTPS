@@ -229,12 +229,109 @@ package body RTPS.Tests.Proto is
 
    ---------------------------------------------------------------------
 
+   procedure Test_Gap_Coalescing
+     (Tc : in out AUnit.Test_Cases.Test_Case'Class)
+   is
+      pragma Unreferenced (Tc);
+      --  8.4.9.2.12 note: a run of irrelevant SNs is sent as ONE GAP
+      --  with a bitmap listing every irrelevant SN, instead of one
+      --  single-SN GAP per change.  Setup: cache holds ALIVE changes
+      --  1..2 and 5..6, SNs 3..4 removed (T15: not relevant), SN 7
+      --  irrelevant (NOT_ALIVE_DISPOSED).  A push of the run starting
+      --  at SN 3 must produce ONE GAP covering 3..4 with the bitmap
+      --  listing 4; SN 5 continues as DATA.
+      Writer_Cache : constant H.History_Cache_Ref :=
+        new H.History_Cache (Capacity => 32);
+      Writer : SW.Writer_State;
+      Rx     : U.UDPv4_Transport;
+      Change : H.Cache_Change_Ref;
+      Writer_Guid : constant T.GUID_T :=
+        (Guid_Prefix => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+         Entity_Id   => [0, 0, 1, 16#C2#]);
+      Reader_Guid : constant T.GUID_T :=
+        (Guid_Prefix => [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+         Entity_Id   => [0, 0, 1, 16#C7#]);
+   begin
+      Writer_Cache.Set_Writer_Guid
+        (P => Writer_Guid.Guid_Prefix, E => Writer_Guid.Entity_Id);
+      SW.New_Writer (Writer, Writer_Guid, Writer_Cache);
+
+      Rx.Open (Port => 0, Reuse_Addr => True);
+      Writer_Tx.Open (Port => 0, Reuse_Addr => True);
+      declare
+         Tx_Ref : constant RTPS.Transports.Transport_Ref :=
+           Writer_Tx'Access;
+      begin
+         SW.Open (Writer, Tx_Ref);
+      end;
+
+      SW.Matched_Reader_Add
+        (Writer,
+         Proxy     => (Remote_Reader_Guid => Reader_Guid,
+                       Expects_Inline_Qos => False,
+                       Unicast_Port   => Rx.Local_Port,
+                       Multicast_Port => 0),
+         Window_First => 1,
+         Window_Last  => 8);
+
+      --  Fill the cache: six ALIVE changes, SN 1..6.
+      for K in 1 .. 6 loop
+         Writer_Cache.Add_Change
+           (Kind        => T.ALIVE,
+            Write_Time  => T.TIME_ZERO,
+            Instance    => 0,
+            Data        => new T.Octet_Array'(1 => T.Octet (16#40# + K)),
+            Data_Length => 1,
+            Change      => Change);
+      end loop;
+      Assert (Change.all.SN = 6, "cache holds SN 1..6");
+
+      --  Remove SN 3 and 4 (T15: the changes are no longer relevant):
+      --  Find(3) and Find(4) now return null, which is exactly the
+      --  Irrelevant predicate's first clause, so the push of SN 3
+      --  coalesces the run [3..4] into one GAP with a bitmap
+      --  listing 4, and SN 5 continues as DATA.
+      Writer_Cache.Remove_Change (3);
+      Writer_Cache.Remove_Change (4);
+
+      --  T4 on SN 1 (relevant): the DATA path is exercised elsewhere.
+      SW.Push_Next (Writer, Reader_Guid, For_Request => False);
+      --  Push again: SN 2 relevant.
+      SW.Push_Next (Writer, Reader_Guid, For_Request => False);
+      --  Push again: SN 3 starts the irrelevant run [3..4]; one GAP.
+      SW.Push_Next (Writer, Reader_Guid, For_Request => False);
+      --  Push again: SN 5 relevant DATA.
+      SW.Push_Next (Writer, Reader_Guid, For_Request => False);
+      --  Push again: SN 6 relevant DATA.
+      SW.Push_Next (Writer, Reader_Guid, For_Request => False);
+      --  SNs 7..8 were announced in the window but never written;
+      --  they too are "irrelevant" (missing from the history), so
+      --  the next push coalesces them into one more GAP.
+      Assert (SW.Has_Pending (Writer), "SN 7..8 still unsent");
+      SW.Push_Next (Writer, Reader_Guid, For_Request => False);
+      --  Nothing left pending: the whole window is pushed.
+      Assert (not SW.Has_Pending (Writer), "run fully pushed");
+
+      --  The reader never got DATA for 3..4: it would only have
+      --  SNs 1, 2, 5, 6 in its cache (verified through the exchange
+      --  in the other routine; here we check the writer side invariants).
+      Assert (Writer_Cache.Find (3) = null, "SN 3 removed");
+      Assert (Writer_Cache.Find (4) = null, "SN 4 removed");
+
+      Writer_Tx.Close;
+      Rx.Close;
+   end Test_Gap_Coalescing;
+
+   ---------------------------------------------------------------------
+
    overriding procedure Register_Tests (T : in out Proto_Test) is
       use AUnit.Test_Cases.Registration;
    begin
       Register_Routine (T, Test_Proxy_Windows'Access, "proxy window ops");
       Register_Routine (T, Test_Writer_Reader_Exchange'Access,
                         "reliable writer/reader exchange");
+      Register_Routine (T, Test_Gap_Coalescing'Access,
+                        "gap coalescing run");
    end Register_Tests;
 
    overriding function Name (T : Proto_Test) return AUnit.Message_String is

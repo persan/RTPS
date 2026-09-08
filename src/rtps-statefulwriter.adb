@@ -198,6 +198,86 @@ package body RTPS.StatefulWriter is
    end Send_Message;
 
    --  8.4.9.2.4: DATA for a relevant change, GAP for an irrelevant one.
+   --  8.4.9.2.12 note: for an irrelevant SN, the forward run of
+   --  irrelevant sequence numbers in the proxy window is coalesced
+   --  into a single GAP submessage (gapStart = first irrelevant SN;
+   --  gapList.base = SN after the run start; bitmap lists every
+   --  further irrelevant SN of the run, up to the 256-bit set limit).
+
+   --  True when the change for SN is not relevant to the reader:
+   --  missing from the history (removed, T15) or not ALIVE.
+   function Irrelevant (Self : Writer_State; SN : Types.SequenceNumber_T)
+     return Boolean
+   is
+      Change : constant History.Cache_Change_Ref := Self.Cache.Find (SN);
+      use all type Types.SequenceNumber_T;
+   begin
+      return Change = null or else Change.Kind /= Types.ALIVE;
+   end Irrelevant;
+
+   --  Length of the run of consecutive irrelevant SNs starting at
+   --  First, bounded by the proxy window and by the SequenceNumberSet
+   --  limit of 256 (the GAP bitmap covers at most 256 SNs).
+   function Irrelevant_Run_Length
+     (Self  : Writer_State;
+      Proxy : P.ReaderProxy;
+      First : Types.SequenceNumber_T) return Natural
+   is
+      use all type Types.SequenceNumber_T;
+      SN    : Types.SequenceNumber_T := First;
+      Count : Natural := 0;
+   begin
+      while SN <= Proxy.Last_SN
+        and then Count < 256
+        and then Irrelevant (Self, SN)
+      loop
+         Count := Count + 1;
+         SN := SN + 1;
+      end loop;
+      return Count;
+   end Irrelevant_Run_Length;
+
+   --  8.4.9.2.12: send one GAP covering the run of irrelevant SNs
+   --  starting at SN.  Gap_Start = SN; Gap_List.base = SN + 1;
+   --  bitmap bit (K-1) set for every further irrelevant SN of the run
+   --  (2..Run_Length).  A run of length 1 yields the single-SN GAP of
+   --  the simplified T12 logic.
+   procedure Send_Coalesced_Gap
+     (Self : in out Writer_State;
+      Slot :        Natural;
+      SN   :        Types.SequenceNumber_T;
+      Run_Length :  Natural)
+   is
+      Proxy : P.ReaderProxy renames Self.Readers (Slot).Proxy;
+      G     : M.Submessage_T (M.KIND_GAP);
+      Bitmap : Types.Unsigned_Long := 0;
+      use all type Types.SequenceNumber_T;
+   begin
+      if Run_Length >= 2 then
+         --  Bits are numbered from the MSB of the first bitmap long
+         --  (9.4.2.6): bit K covers SN = base + K.
+         for Offset in 0 .. Run_Length - 2 loop
+            declare
+               Candidate : constant Types.SequenceNumber_T :=
+                 SN + 1 + Types.SequenceNumber_T (Offset);
+            begin
+               if Irrelevant (Self, Candidate) then
+                  Bitmap := Bitmap or 2**(31 - Offset);
+               end if;
+            end;
+         end loop;
+      end if;
+
+      G.Endianness := CDR.Little_Endian;
+      G.Gap_Start  := SN;
+      G.Gap_List   := (Bitmap_Base => SN + 1,
+                       Num_Bits    => Types.Unsigned_Long (Run_Length - 1),
+                       Bitmap      => Bitmap);
+      Send_Message (Self,
+        Types.Make_UDPv4_Locator (127, 0, 0, 1, Proxy.Unicast_Port), G);
+   end Send_Coalesced_Gap;
+
+   --  8.4.9.2.4: DATA for a relevant change, GAP for an irrelevant one.
    procedure Send_Data_Or_Gap
      (Self    : in out Writer_State;
       Slot    :        Natural;
@@ -207,18 +287,14 @@ package body RTPS.StatefulWriter is
    is
       Proxy  : P.ReaderProxy renames Self.Readers (Slot).Proxy;
       D      : M.Submessage_T (M.KIND_DATA);
-      G      : M.Submessage_T (M.KIND_GAP);
       Change : History.Cache_Change_Ref;
+      pragma Unreferenced (For_Request);
    begin
       if Relevant then
          Change := Self.Cache.Find (SN);
          if Change = null then
             --  Change was removed from history; send a GAP instead.
-            G.Endianness := CDR.Little_Endian;
-            G.Gap_Start  := SN;
-            G.Gap_List   := (Bitmap_Base => SN + 1, Num_Bits => 0, Bitmap => 0);
-            Send_Message (Self,
-              Types.Make_UDPv4_Locator (127, 0, 0, 1, Proxy.Unicast_Port), G);
+            Send_Coalesced_Gap (Self, Slot, SN, 1);
             return;
          end if;
          D.Endianness := CDR.Little_Endian;
@@ -232,11 +308,8 @@ package body RTPS.StatefulWriter is
          Send_Message (Self,
            Types.Make_UDPv4_Locator (127, 0, 0, 1, Proxy.Unicast_Port), D);
       else
-         G.Endianness := CDR.Little_Endian;
-         G.Gap_Start  := SN;
-         G.Gap_List   := (Bitmap_Base => SN + 1, Num_Bits => 0, Bitmap => 0);
-         Send_Message (Self,
-           Types.Make_UDPv4_Locator (127, 0, 0, 1, Proxy.Unicast_Port), G);
+         Send_Coalesced_Gap
+           (Self, Slot, SN, Irrelevant_Run_Length (Self, Proxy, SN));
       end if;
    end Send_Data_Or_Gap;
 
@@ -317,11 +390,23 @@ package body RTPS.StatefulWriter is
          begin
             Send_Data_Or_Gap (Self, Slot, SN, Relevant, For_Request => False);
             --  Push mode: DATA sent counts as UNACKNOWLEDGED until
-            --  acked (reliable); irrelevant => treat as acked (GAP).
+            --  acked (reliable); irrelevant => the whole coalesced
+            --  run is sent as one GAP, so all its SNs become
+            --  ACKNOWLEDGED (8.4.9.2.12 post-condition: every SN of
+            --  the GAP leaves requested_changes()).
             if Relevant then
                Proxy.Status.all (Idx) := P.UNACKNOWLEDGED;
             else
-               Proxy.Status.all (Idx) := P.ACKNOWLEDGED;
+               declare
+                  Run : constant Natural :=
+                    Irrelevant_Run_Length (Self, Proxy, SN);
+                  use all type Types.SequenceNumber_T;
+               begin
+                  for Offset in 0 .. Run - 1 loop
+                     Proxy.Status.all
+                       (Idx + Offset) := P.ACKNOWLEDGED;
+                  end loop;
+               end;
             end if;
          end;
       end if;
