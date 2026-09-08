@@ -13,17 +13,18 @@ cross-referenced to its clause number in the source comments.
 ## Status
 
 Work in progress. The **Messages Module** (clause 8.3 / 9.4.5 wire mapping) is
-implemented and round-trip tested in both endiannesses; the Structure Module
-(clause 8.2) and the Behavior / Discovery modules are interfaces and data
-types only. Not yet a conformant RTPS implementation — no UDP transport,
-no discovery protocol, no writer/reader protocol machines.
+implemented and round-trip tested in both endiannesses; the **UDPv4 transport**
+(clause 9 PSM) is implemented on GNAT.Sockets with real-socket loopback tests;
+the Structure Module (clause 8.2) is interface + HistoryCache. Not yet a
+conformant RTPS implementation — no discovery protocol, no writer/reader
+protocol machines.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
 | `src/` | The library (static library project `rtps.gpr`, produces `libRTPS.a`) |
-| `test/` | Self-contained test driver (`test_rtps.gpr`) |
+| `test/` | AUnit test driver (`test_rtps.gpr`) |
 | `doc/` | The RTPS 2.2 specification PDF and extracted text |
 
 ### Library sources (`src/`)
@@ -36,24 +37,28 @@ no discovery protocol, no writer/reader protocol machines.
 | `RTPS.Entities` | 8.2 | Structure module: Entity/Participant/Endpoint/Writer/Reader interfaces, GUID ordering |
 | `RTPS.History` | 8.2.2 | HistoryCache protected type: Add_Change, Remove_Change, Get_Seq_Num_Min/Max, Find |
 | `RTPS.Receiver` | 8.3.4 | Message Receiver: parses messages, maintains interpreter state, dispatches submessages to a Sink callback |
-| `RTPS.Transports` | 9.6 | Transport abstraction (interface only; UDP/IP PSM not yet written) |
+| `RTPS.Transports` | 9.6 | Transport abstraction (interface) |
+| `RTPS.Transports.UDPv4` | 9 (PSM) | UDPv4 transport on GNAT.Sockets: Open/Close with SO_REUSEADDR, Send (one datagram per message), Receive with optional timeout, multicast group join/leave |
 
 ## Building
 
-Requires GNAT and GPRbuild (tested with GNAT Pro 27.0w on Windows).
+Requires GNAT and GPRbuild (tested with GNAT Pro 27.0w on Windows, and
+gnat_native 15 / gprbuild 25 via Alire on Linux CI). The crate builds
+with `alr build`; AUnit is fetched automatically as a test dependency.
 
 ```sh
 # library
 gprbuild -Prtps.gpr
 
-# tests (produces test/test_rtps.exe)
+# AUnit test driver (produces test/test_rtps[.exe])
 cd test && gprbuild -Ptest_rtps.gpr && ./test_rtps
 ```
 
-The test driver prints `PASS/FAIL` per check and exits non-zero on failure.
-Run it from the `test/` directory.
+The test driver runs the AUnit suites and exits non-zero on failure.
 
 ## Example
+
+Encoding a Heartbeat submessage into a datagram:
 
 ```ada
 with RTPS.Types;  use RTPS.Types;
@@ -83,6 +88,35 @@ begin
 end Send_Heartbeat;
 ```
 
+Sending and receiving real datagrams over the UDPv4 transport:
+
+```ada
+with RTPS.Types;
+with RTPS.Transports.UDPv4;
+
+procedure UDP_Loop is
+   package U renames RTPS.Transports.UDPv4;
+   use type RTPS.Types.Octet;
+
+   Tx, Rx : U.UDPv4_Transport;
+   Item   : RTPS.Transports.Received_Message;
+   Msg    : constant RTPS.Types.Octet_Array := (16#52#, 16#54#, 16#50#, 16#53#);
+begin
+   Rx.Open (Port => 7411);                  -- binds 0.0.0.0:7411
+   Tx.Open (Port => 0);                     -- ephemeral source port
+
+   Tx.Send (Dest => RTPS.Types.Make_UDPv4_Locator (127, 0, 0, 1, Rx.Local_Port),
+            Data => Msg);
+
+   Rx.Receive (Item, Timeout => 2.0);       -- 0.0 = block forever
+   --  Item.Length = 4, Item.Data holds the message,
+   --  Item.Source_Loc is the sender's UDPv4 locator.
+
+   Rx.Close;
+   Tx.Close;
+end UDP_Loop;
+```
+
 ## Design notes
 
 - **Spec traceability** — types and constants carry the clause/table they
@@ -96,11 +130,12 @@ end Send_Heartbeat;
   (the protocol's EndiannessFlag), not a compile-time choice.
 - **No heap in the hot path** — the encoder writes into a caller-provided
   buffer; sequence-number sets are modeled as fixed 256-bit bitmaps.
+- **One datagram per message** — the UDPv4 transport maps one RTPS
+  Message to exactly one UDP datagram (clause 9.5); locator→sockaddr
+  conversion enforces the 9.3.2 rule (12 zero octets + a.b.c.d).
 
 ## Roadmap
 
-- UDP/IP transport (the PSM of clause 9) using the `RTPS.Transports`
-  interface
 - StatefulWriter / StatefulReader protocol machines (8.4.9 / 8.4.12)
 - SPDP/SEDP discovery endpoints (8.5)
 - CDR payload encapsulation for user data (clause 10)
