@@ -1,8 +1,9 @@
 ------------------------------------------------------------------------------
---  test_rtps.gpr -- test-driver project importing the RTPS library
+--  test_rtps.gpr -- AUnit test-driver project importing the RTPS library
 ------------------------------------------------------------------------------
 
 with "../rtps.gpr";
+with "aunit";
 
 project Test_RTPS is
 

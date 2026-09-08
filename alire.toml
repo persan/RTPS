@@ -25,8 +25,17 @@ maintainers-logins = ["persan"]
 
 project-files = ["rtps.gpr"]
 
+[build-switches]
+development.compile_checks = "errors"
+validation.runtime_checks = "everything"
+release.optimization = "performance"
+
+# Test-only dependency (AUnit framework, used by test/).
+# The compiler itself is not pinned as a crate dependency: Alire picks
+# the configured toolchain (alr toolchain), which may be an external
+# GNAT Pro install that the "gnat" meta-crate cannot represent.
 [[depends-on]]
-gnat = ">=2021"
+aunit = "^26.0"
 
 # First release: wire-encoding core only, no dependencies beyond the
 # compiler. API is subject to change.
