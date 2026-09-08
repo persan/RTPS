@@ -15,6 +15,7 @@ package RTPS.Transports is
   use all type RTPS.Types.Long;
 
    type Transport is limited interface;
+   type Transport_Ref is access all Transport'Class;
 
    function Max_Message_Size (Self : Transport)
      return Ada.Streams.Stream_Element_Count is abstract;
@@ -24,6 +25,12 @@ package RTPS.Transports is
 
    function Kind_Of (Self : Transport) return RTPS.Types.Long is abstract;
    --  LOCATOR_KIND_UDPv4 / LOCATOR_KIND_UDPv6 / vendor-defined.
+
+   procedure Send
+     (Self : in out Transport;
+      Dest :        RTPS.Types.Locator_T;
+      Data :        RTPS.Types.Octet_Array) is abstract;
+   --  Send one datagram carrying Data to the locator Dest.
 
    subtype Port_Type is Ada.Streams.Stream_Element_Count;
 
